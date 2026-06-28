@@ -1,5 +1,5 @@
 import { auth, db } from './firebase-config.js';
-import { ref, get, update, set } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js";
+import { ref, get, update } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js";
 import soundManager from './sound.js';
 
 // ==================== GAME STATE ====================
@@ -11,8 +11,6 @@ let horseRaceRunning = false;
 let wheelSpinning = false;
 let wheelAngle = 0;
 let currentCard = Math.floor(Math.random() * 13) + 1;
-
-// Charm luck bonus
 let equippedCharmsLuck = 0;
 
 // ==================== DOM REFS ====================
@@ -25,7 +23,7 @@ const winstreakCount = document.getElementById('winstreakCount');
 const xpFill = document.getElementById('xpFill');
 const levelDisplay = document.getElementById('levelDisplay');
 
-// ==================== XP & LEVEL SYSTEM ====================
+// ==================== XP & LEVEL ====================
 function getXPForLevel(level) {
   if (level <= 10) return 100;
   if (level <= 30) return 250;
@@ -57,12 +55,10 @@ async function addXP(amount) {
     level++;
     leveledUp = true;
     
-    // Check milestones
     const milestone = getLevelMilestone(level);
     if (milestone) {
       if (typeof milestone === 'object') {
         userData.tokens += milestone.tokens;
-        // Add special charm
         const specialCharm = {
           id: 'reward-charm-' + Date.now(),
           name: '100 Reward Charm',
@@ -70,6 +66,7 @@ async function addXP(amount) {
           equipped: false,
           isSpecial: true,
         };
+        if (!userData.charms) userData.charms = [];
         userData.charms.push(specialCharm);
         setMessage(`🎉 LEVEL ${level}! Dapat ${milestone.tokens} Token + ${milestone.specialCharm}!`, true);
         soundManager.play('achievement');
@@ -86,36 +83,32 @@ async function addXP(amount) {
   userData.xp = xp;
   userData.level = level;
   
-  // Update UI
-  updateXPBar();
+  updateUI();
+  await saveUserData();
+}
+
+function updateUI() {
+  if (!userData) return;
   updateTokenDisplay();
-  
-  // Save to Firebase
-  if (auth.currentUser) {
-    await update(ref(db, `users/${auth.currentUser.uid}`), {
-      xp: userData.xp,
-      level: userData.level,
-      tokens: userData.tokens,
-      charms: userData.charms,
-    });
-  }
+  updateXPBar();
+  updateWinstreakDisplay();
 }
 
 function updateXPBar() {
-  if (!userData) return;
+  if (!userData || !xpFill || !levelDisplay) return;
   const xpNeeded = getXPForLevel(userData.level);
-  const percentage = (userData.xp / xpNeeded) * 100;
+  const percentage = Math.min(100, (userData.xp / xpNeeded) * 100);
   xpFill.style.width = percentage + '%';
   levelDisplay.textContent = userData.level;
 }
 
 function updateTokenDisplay() {
-  if (!userData) return;
-  tokenDisplay.textContent = userData.tokens;
+  if (!userData || !tokenDisplay) return;
+  tokenDisplay.textContent = userData.tokens || 0;
 }
 
 function updateWinstreakDisplay() {
-  if (!userData) return;
+  if (!userData || !winstreakDisplay || !winstreakCount) return;
   if (userData.winstreak > 1) {
     winstreakDisplay.style.display = 'block';
     winstreakCount.textContent = userData.winstreak;
@@ -127,41 +120,53 @@ function updateWinstreakDisplay() {
 // ==================== TOKEN MANAGEMENT ====================
 function addTokens(amount) {
   if (!userData) return;
-  userData.tokens += amount;
+  userData.tokens = (userData.tokens || 0) + amount;
   updateTokenDisplay();
-  saveTokens();
+  saveUserData();
 }
 
 function deductTokens(amount) {
   if (!userData) return false;
-  if (userData.tokens >= amount) {
+  if ((userData.tokens || 0) >= amount) {
     userData.tokens -= amount;
     updateTokenDisplay();
-    saveTokens();
+    saveUserData();
     return true;
   }
   return false;
 }
 
-async function saveTokens() {
+async function saveUserData() {
   if (!userData || !auth.currentUser) return;
-  await update(ref(db, `users/${auth.currentUser.uid}`), {
-    tokens: userData.tokens,
-  });
+  try {
+    await update(ref(db, `users/${auth.currentUser.uid}`), {
+      tokens: userData.tokens,
+      xp: userData.xp,
+      level: userData.level,
+      winstreak: userData.winstreak,
+      maxWinstreak: userData.maxWinstreak,
+      totalWins: userData.totalWins,
+      totalGames: userData.totalGames,
+      charms: userData.charms,
+      equippedCharms: userData.equippedCharms,
+      achievements: userData.achievements,
+    });
+  } catch (e) {
+    console.error('Save error:', e);
+  }
 }
 
-// ==================== WIN/LOSE HANDLER ====================
-async function handleWin(amount, gameName) {
+// ==================== WIN/LOSE ====================
+async function handleWin(amount) {
   addTokens(amount);
-  userData.winstreak++;
-  userData.totalWins++;
-  userData.totalGames++;
+  userData.winstreak = (userData.winstreak || 0) + 1;
+  userData.totalWins = (userData.totalWins || 0) + 1;
+  userData.totalGames = (userData.totalGames || 0) + 1;
   
-  if (userData.winstreak > userData.maxWinstreak) {
+  if (userData.winstreak > (userData.maxWinstreak || 0)) {
     userData.maxWinstreak = userData.winstreak;
   }
   
-  // XP Calculation
   let xpGain = 10;
   if (userData.winstreak >= 10) {
     xpGain = 1000;
@@ -170,43 +175,39 @@ async function handleWin(amount, gameName) {
   }
   
   await addXP(xpGain);
-  updateWinstreakDisplay();
-  
+  updateUI();
   soundManager.play('win');
 }
 
-async function handleLose(amount) {
+async function handleLose() {
   userData.winstreak = 0;
-  userData.totalGames++;
-  updateWinstreakDisplay();
-  
+  userData.totalGames = (userData.totalGames || 0) + 1;
+  updateUI();
   soundManager.play('lose');
 }
 
-// ==================== LUCK CALCULATION ====================
-function calculateLuck() {
-  let totalLuck = equippedCharmsLuck;
-  // Bandar RTP can affect luck
-  if (userData && userData.bandar && userData.bandar.isBandar) {
-    const rtp = userData.bandar.rtp;
-    totalLuck += (rtp - 50) / 10; // RTP 60 = +1% luck, RTP 40 = -1% luck
-  }
-  return totalLuck;
-}
-
+// ==================== LUCK ====================
 function bandarRNG() {
-  let r = Math.random();
-  const luck = calculateLuck();
-  // Apply luck bonus (max 25% shift)
-  const shift = Math.max(-0.25, Math.min(0.25, luck / 100));
-  r = Math.max(0, Math.min(0.999, r + shift));
-  return r;
+  return Math.random();
 }
 
-// ==================== SLOT MACHINE ====================
+// ==================== UTILS ====================
+function setMessage(msg, good = true) {
+  if (!messageBox) return;
+  messageBox.innerHTML = msg;
+  messageBox.style.color = good ? '#ffd966' : '#ff8c8c';
+}
+
+function getBetAmount() {
+  if (currentBet === 'max') return Math.min(userData?.tokens || 0, 1000);
+  return currentBet;
+}
+
+// ==================== SLOT ====================
 const symbols = ['🍒', '🍋', '🍊', '⭐', '💎', '7️⃣'];
 
 function renderSlot() {
+  if (!gameArea) return;
   gameArea.innerHTML = `
     <div class="slot-row" id="slotRow">
       <span class="slot-item">🍒</span>
@@ -218,12 +219,8 @@ function renderSlot() {
       <button class="btn" id="spinSlot" ${slotSpinning ? 'disabled' : ''}>🎰 SPIN</button>
     </div>
   `;
-  document.getElementById('spinSlot')?.addEventListener('click', spinSlot);
-}
-
-function getBetAmount() {
-  if (currentBet === 'max') return Math.min(userData?.tokens || 0, 1000);
-  return currentBet;
+  const spinBtn = document.getElementById('spinSlot');
+  if (spinBtn) spinBtn.addEventListener('click', spinSlot);
 }
 
 async function spinSlot() {
@@ -276,45 +273,34 @@ async function finalizeSlot(items, betAmount) {
 
   if (res[0] === res[1] && res[1] === res[2]) {
     const winAmount = betAmount * 8;
-    await handleWin(winAmount, 'slot');
+    await handleWin(winAmount);
     soundManager.play('jackpot');
     setMessage(`🎉 JACKPOT! +${winAmount} Token`);
   } else if (res[0] === res[1] || res[1] === res[2] || res[0] === res[2]) {
     const winAmount = betAmount * 2;
-    await handleWin(winAmount, 'slot');
+    await handleWin(winAmount);
     setMessage(`🍀 Dua sama! +${winAmount} Token`);
   } else {
-    await handleLose(betAmount);
+    await handleLose();
     setMessage(`💨 Coba lagi! -${betAmount} Token`, false);
   }
 
   slotSpinning = false;
   renderSlot();
-  await saveUserData();
 }
 
 // ==================== HORSE RACE ====================
-const HORSE_IMAGES = {
-  horse1: 'img/horse1.png',
-  horse2: 'img/horse2.png',
-};
-
 function renderHorse() {
+  if (!gameArea) return;
   gameArea.innerHTML = `
     <div class="race-track">
       <div class="finish-line"></div>
       <div class="race-lane">
-        <img src="${HORSE_IMAGES.horse1}" class="horse-img" id="horse1" 
-             onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"
-             alt="Kuda Emas">
-        <span style="display:none; font-size:2rem;" class="horse-fallback">🐴</span>
+        <span style="font-size:2rem;" id="horse1">🐴</span>
         <span class="horse-label">Kuda Emas</span>
       </div>
       <div class="race-lane">
-        <img src="${HORSE_IMAGES.horse2}" class="horse-img" id="horse2"
-             onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"
-             alt="Kuda Silver">
-        <span style="display:none; font-size:2rem;" class="horse-fallback">🐎</span>
+        <span style="font-size:2rem;" id="horse2">🐎</span>
         <span class="horse-label">Kuda Silver</span>
       </div>
     </div>
@@ -324,7 +310,6 @@ function renderHorse() {
       <button class="btn" id="betHorse2" ${horseRaceRunning ? 'disabled' : ''}>🐴 Silver</button>
     </div>
   `;
-
   document.getElementById('betHorse1')?.addEventListener('click', () => runHorse(1));
   document.getElementById('betHorse2')?.addEventListener('click', () => runHorse(2));
 }
@@ -344,82 +329,35 @@ async function runHorse(bet) {
   const h2 = document.getElementById('horse2');
   
   if (!h1 || !h2) {
-    // Fallback to emoji
-    const fallbacks = document.querySelectorAll('.horse-fallback');
-    runHorseFallback(bet, betAmount, fallbacks);
-    return;
-  }
-
-  // Reset position
-  h1.style.marginLeft = '0px';
-  h2.style.marginLeft = '0px';
-
-  const winner = bandarRNG() < 0.5 ? 1 : 2;
-  const trackWidth = document.querySelector('.race-track')?.offsetWidth - 60 || 300;
-
-  const interval = setInterval(() => {
-    let p1 = parseFloat(h1.style.marginLeft) || 0;
-    let p2 = parseFloat(h2.style.marginLeft) || 0;
-    p1 += Math.random() * 15 + 2;
-    p2 += Math.random() * 15 + 2;
-    h1.style.marginLeft = Math.min(p1, trackWidth) + 'px';
-    h2.style.marginLeft = Math.min(p2, trackWidth) + 'px';
-
-    if (p1 >= trackWidth || p2 >= trackWidth) {
-      clearInterval(interval);
-      if (winner === 1) h1.style.marginLeft = (trackWidth + 10) + 'px';
-      else h2.style.marginLeft = (trackWidth + 10) + 'px';
-
-      setTimeout(async () => {
-        if (bet === winner) {
-          const winAmount = betAmount * 2;
-          await handleWin(winAmount, 'horse');
-          setMessage(`🏆 Kuda ${winner === 1 ? 'Emas' : 'Silver'} menang! +${winAmount} Token`);
-        } else {
-          await handleLose(betAmount);
-          setMessage(`😵 Kalah! -${betAmount} Token`, false);
-        }
-        horseRaceRunning = false;
-        renderHorse();
-        await saveUserData();
-      }, 500);
-    }
-  }, 80);
-}
-
-async function runHorseFallback(bet, betAmount, fallbacks) {
-  if (!fallbacks || fallbacks.length < 2) {
     horseRaceRunning = false;
     return;
   }
 
-  fallbacks[0].style.marginLeft = '0px';
-  fallbacks[1].style.marginLeft = '0px';
+  h1.style.marginLeft = '0px';
+  h2.style.marginLeft = '0px';
 
-  const winner = bandarRNG() < 0.5 ? 1 : 2;
-  const trackWidth = 250;
+  const winner = Math.random() < 0.5 ? 1 : 2;
   let pos1 = 0, pos2 = 0;
 
   const interval = setInterval(() => {
-    pos1 += Math.random() * 15 + 2;
-    pos2 += Math.random() * 15 + 2;
-    fallbacks[0].style.marginLeft = Math.min(pos1, trackWidth) + 'px';
-    fallbacks[1].style.marginLeft = Math.min(pos2, trackWidth) + 'px';
+    pos1 += Math.random() * 20;
+    pos2 += Math.random() * 20;
+    h1.style.marginLeft = Math.min(pos1, 250) + 'px';
+    h2.style.marginLeft = Math.min(pos2, 250) + 'px';
 
-    if (pos1 >= trackWidth || pos2 >= trackWidth) {
+    if (pos1 >= 250 || pos2 >= 250) {
       clearInterval(interval);
       setTimeout(async () => {
         if (bet === winner) {
           const winAmount = betAmount * 2;
-          await handleWin(winAmount, 'horse');
+          await handleWin(winAmount);
           setMessage(`🏆 Menang! +${winAmount} Token`);
         } else {
-          await handleLose(betAmount);
+          await handleLose();
           setMessage(`😵 Kalah! -${betAmount} Token`, false);
         }
         horseRaceRunning = false;
         renderHorse();
-        await saveUserData();
       }, 500);
     }
   }, 80);
@@ -427,6 +365,7 @@ async function runHorseFallback(bet, betAmount, fallbacks) {
 
 // ==================== WHEEL ====================
 function renderWheel() {
+  if (!gameArea) return;
   gameArea.innerHTML = `
     <div class="wheel-container">
       <div class="wheel-pointer">🔻</div>
@@ -493,29 +432,27 @@ async function spinWheel() {
     
     if (multiplier > 0) {
       const winAmount = betAmount * multiplier;
-      await handleWin(winAmount, 'wheel');
-      setMessage(`🎡 Dapat ${winAmount} Token! (x${multiplier})`);
+      await handleWin(winAmount);
+      setMessage(`🎡 Dapat ${winAmount} Token!`);
     } else {
-      await handleLose(betAmount);
-      setMessage('💨 Zonk! Coba lagi', false);
+      await handleLose();
+      setMessage('💨 Zonk!', false);
     }
     
     drawWheel(wheelAngle);
     canvas.style.transition = 'none';
     canvas.style.transform = `rotate(${wheelAngle}deg)`;
     wheelSpinning = false;
-    
     setTimeout(() => {
       canvas.style.transition = 'transform 3s cubic-bezier(0.17, 0.67, 0.12, 0.99)';
       renderWheel();
     }, 50);
-    
-    await saveUserData();
   }, 3100);
 }
 
 // ==================== HI-LO ====================
 function renderHiLo() {
+  if (!gameArea) return;
   gameArea.innerHTML = `
     <div style="font-size:2rem;">🃏 Kartu: ${currentCard}</div>
     <div class="bet-controls">
@@ -542,70 +479,18 @@ async function guessHL(guess) {
   
   if (win) {
     const winAmount = betAmount * 2;
-    await handleWin(winAmount, 'hilo');
-    setMessage(`✅ Benar! Kartu ${next} +${winAmount} Token`);
+    await handleWin(winAmount);
+    setMessage(`✅ Benar! +${winAmount} Token`);
   } else {
-    await handleLose(betAmount);
-    setMessage(`❌ Salah! Kartu ${next} -${betAmount} Token`, false);
+    await handleLose();
+    setMessage(`❌ Salah! -${betAmount} Token`, false);
   }
   
   currentCard = next;
   renderHiLo();
-  await saveUserData();
 }
 
-// ==================== UTILS ====================
-function setMessage(msg, good = true) {
-  messageBox.innerHTML = msg;
-  messageBox.style.color = good ? '#ffd966' : '#ff8c8c';
-}
-
-async function saveUserData() {
-  if (!userData || !auth.currentUser) return;
-  await update(ref(db, `users/${auth.currentUser.uid}`), {
-    tokens: userData.tokens,
-    xp: userData.xp,
-    level: userData.level,
-    winstreak: userData.winstreak,
-    maxWinstreak: userData.maxWinstreak,
-    totalWins: userData.totalWins,
-    totalGames: userData.totalGames,
-    charms: userData.charms,
-    equippedCharms: userData.equippedCharms,
-    achievements: userData.achievements,
-  });
-}
-
-// ==================== INITIALIZATION ====================
-async function loadUserData(uid) {
-  const snapshot = await get(ref(db, `users/${uid}`));
-  if (snapshot.exists()) {
-    userData = snapshot.val();
-    updateEquippedCharmsLuck();
-    updateTokenDisplay();
-    updateXPBar();
-    updateWinstreakDisplay();
-    renderGame();
-    
-    // Start BGM
-    soundManager.startBGM();
-  }
-}
-
-function updateEquippedCharmsLuck() {
-  equippedCharmsLuck = 0;
-  if (userData?.equippedCharms) {
-    userData.equippedCharms.forEach(charmId => {
-      if (charmId) {
-        const charm = userData.charms.find(c => c.id === charmId);
-        if (charm) {
-          equippedCharmsLuck += charm.luckBonus;
-        }
-      }
-    });
-  }
-}
-
+// ==================== GAME SWITCHER ====================
 function renderGame() {
   switch (currentGame) {
     case 'slot': renderSlot(); break;
@@ -615,8 +500,23 @@ function renderGame() {
   }
 }
 
+// ==================== LOAD USER DATA ====================
+async function loadUserData(uid) {
+  try {
+    const snapshot = await get(ref(db, `users/${uid}`));
+    if (snapshot.exists()) {
+      userData = snapshot.val();
+      console.log('User data loaded:', userData);
+      updateUI();
+      renderGame();
+      soundManager.startBGM();
+    }
+  } catch (e) {
+    console.error('Load error:', e);
+  }
+}
+
 // ==================== EVENT LISTENERS ====================
-// Bet selector
 betButtons.forEach(btn => {
   btn.addEventListener('click', () => {
     betButtons.forEach(b => b.classList.remove('active-bet'));
@@ -628,7 +528,6 @@ betButtons.forEach(btn => {
   });
 });
 
-// Game tabs
 document.querySelectorAll('#gameTabs .game-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('#gameTabs .game-btn').forEach(b => b.classList.remove('active'));
@@ -639,22 +538,19 @@ document.querySelectorAll('#gameTabs .game-btn').forEach(btn => {
   });
 });
 
-// Reset tokens
 document.getElementById('resetTokens')?.addEventListener('click', async () => {
   if (!userData) return;
   userData.tokens = 500;
-  updateTokenDisplay();
+  updateUI();
   await saveUserData();
-  soundManager.play('click');
   setMessage('Token di-reset ke 500!');
 });
 
-// Listen for user loaded event
 window.addEventListener('userLoaded', async (e) => {
+  console.log('userLoaded event received:', e.detail);
   await loadUserData(e.detail.uid);
 });
 
-// Export for other modules
 export { 
   userData, 
   addTokens, 
@@ -662,7 +558,6 @@ export {
   setMessage, 
   saveUserData, 
   updateTokenDisplay,
-  updateEquippedCharmsLuck,
-  renderGame as renderCurrentGame,
-  bandarRNG,
+  renderGame,
+  updateUI,
 };
