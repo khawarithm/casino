@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>🎰 DumbCasino - Bandar Edition v3</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ==================== AUTH SCREEN ==================== -->
+  <div id="authScreen" class="screen active">
+    <div class="auth-container">
+      <h1 class="title">🎰 DumbCasino</h1>
+      <p class="subtitle">Login / Register</p>
+
+      <!-- Login Form -->
+      <form id="loginForm" class="auth-form">
+        <input type="email" id="loginEmail" placeholder="Email" required>
+        <input type="password" id="loginPassword" placeholder="Password" required>
+        <button type="submit" class="btn">🔑 Login</button>
+      </form>
+
+      <!-- Register Form -->
+      <form id="registerForm" class="auth-form">
+        <input type="text" id="regUsername" placeholder="Username" required minlength="3" maxlength="16">
+        <input type="email" id="regEmail" placeholder="Email" required>
+        <input type="password" id="regPassword" placeholder="Password" required minlength="6">
+        <button type="submit" class="btn">✨ Register</button>
+      </form>
+
+      <div class="auth-toggle">
+        <span id="showRegister">Belum punya akun? <b>Register</b></span>
+        <span id="showLogin" style="display:none;">Sudah punya akun? <b>Login</b></span>
+      </div>
+      <div id="authError" class="error-msg"></div>
+    </div>
+  </div>
+
+  <!-- ==================== MAIN GAME SCREEN ==================== -->
+  <div id="gameScreen" class="screen">
+    <div class="casino">
+      <h1 class="title">DumbCasino</h1>
+      <div class="subtitle">🎲 BANDAR EDITION · HIGH STAKES 🎲</div>
+
+      <!-- Token & Profile Bar -->
+      <div class="token-panel">
+        <div class="tokens">🪙 <span id="tokenDisplay">0</span></div>
+        <div class="xp-bar-container">
+          <div class="xp-bar">
+            <div class="xp-fill" id="xpFill" style="width:0%"></div>
+          </div>
+          <span class="xp-text">Lv.<span id="levelDisplay">1</span></span>
+        </div>
+        <button class="btn btn-sm" id="profileBtn">👤 Profil</button>
+        <button class="btn btn-sm" id="logoutBtn">🚪 Keluar</button>
+      </div>
+
+      <!-- Bet amount selector -->
+      <div class="bet-amount-selector" id="betSelector">
+        <button class="btn btn-sm btn-bet active-bet" data-bet="10">10</button>
+        <button class="btn btn-sm btn-bet" data-bet="50">50</button>
+        <button class="btn btn-sm btn-bet" data-bet="100">100</button>
+        <button class="btn btn-sm btn-bet" data-bet="500">500</button>
+        <button class="btn btn-sm btn-bet" data-bet="max">MAX</button>
+      </div>
+
+      <!-- Game Tabs -->
+      <div class="game-grid" id="gameTabs">
+        <button class="game-btn active" data-game="slot">🎰 Slot</button>
+        <button class="game-btn" data-game="horse">🐎 Balap</button>
+        <button class="game-btn" data-game="wheel">🎡 Roda</button>
+        <button class="game-btn" data-game="hilo">🃏 Hi-Lo</button>
+      </div>
+
+      <!-- Game Area -->
+      <div class="game-area" id="gameArea"></div>
+      <div class="message" id="messageBox"></div>
+
+      <!-- Win Streak Display -->
+      <div class="winstreak-display" id="winstreakDisplay" style="display:none;">
+        🔥 Win Streak: <span id="winstreakCount">0</span>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="action-buttons">
+        <button class="btn btn-sm" id="shopBtn">🎁 Shop & Gacha</button>
+        <button class="btn btn-sm" id="loanBtn">💸 Pinjam</button>
+        <button class="btn btn-sm" id="bandarToggle">🏪 Bandar</button>
+        <button class="btn btn-sm" id="resetTokens">🔄 Reset</button>
+      </div>
+
+      <!-- Bandar Panel -->
+      <div class="bandar-panel" id="bandarPanel" style="display: none;">
+        <h3 style="text-align:center; color:#f7b32b;">🏪 Casino: <span id="casinoName">-</span></h3>
+        <div class="bandar-stats">
+          <span>👥 Pengunjung: <b id="visitorCount">0</b></span>
+          <span>💰 Pendapatan: <b id="bandarIncome">0</b></span>
+        </div>
+        <div class="visitor-bar"><div class="visitor-fill" id="visitorFill" style="width:0%"></div></div>
+        <div style="font-size:0.7rem; color:#c0a0ff;">Atur RTP:</div>
+        <input type="range" id="rtpSlider" min="10" max="90" value="60" style="width:100%;">
+        <span style="font-size:0.7rem;">RTP: <b id="rtpValue">60%</b></span>
+        <div style="display:flex; gap:0.3rem; margin-top:0.5rem; flex-wrap:wrap;">
+          <button class="btn btn-sm" id="unlockWheel">🔓 Roda (700k)</button>
+          <button class="btn btn-sm" id="unlockHorse">🔓 Balap (750k)</button>
+          <button class="btn btn-sm" id="unlockHiLo">🔓 Hi-Lo (850k)</button>
+        </div>
+        <button class="btn" id="collectIncome" style="margin-top:0.5rem;width:100%;">💸 Tarik Pendapatan</button>
+        <button class="btn btn-sm" id="renameCasino" style="margin-top:0.3rem;width:100%;">✏️ Ganti Nama</button>
+      </div>
+
+      <!-- Shop & Gacha Panel -->
+      <div class="shop-panel" id="shopPanel" style="display: none;">
+        <h3 style="text-align:center; color:#f7b32b;">🎁 Charm Gacha</h3>
+        <div class="gacha-machine" id="gachaMachine">
+          <div class="gacha-animation" id="gachaAnim"></div>
+          <div class="gacha-result" id="gachaResult"></div>
+        </div>
+        <p style="text-align:center;">Harga: <b id="gachaPrice">250</b> Token</p>
+        <button class="btn" id="openGacha">🎲 Buka Crate!</button>
+        <h4 style="margin-top:1rem;">Charm Kamu:</h4>
+        <div class="equipped-charms" id="equippedCharms">
+          <div class="charm-slot">Slot 1</div>
+          <div class="charm-slot">Slot 2</div>
+        </div>
+        <div class="charm-inventory" id="charmInventory"></div>
+      </div>
+
+      <!-- Loan Panel -->
+      <div class="loan-panel" id="loanPanel" style="display: none;">
+        <h3 style="text-align:center; color:#f7b32b;">💸 Pinjaman</h3>
+        <p>Limit: <b>100.000 Token</b> | Bunga: <b>2%</b></p>
+        <p>Pinjaman Aktif: <b id="activeLoan">0</b> Token</p>
+        <input type="number" id="loanAmount" placeholder="Jumlah pinjaman" min="100" max="100000">
+        <button class="btn" id="takeLoan">📝 Pinjam</button>
+        <button class="btn" id="repayLoan" style="margin-top:0.3rem;">💰 Lunasi</button>
+      </div>
+
+      <!-- Profile Panel -->
+      <div class="profile-panel" id="profilePanel" style="display: none;">
+        <h3 style="text-align:center; color:#f7b32b;">👤 Profil</h3>
+        <div class="profile-header">
+          <div class="avatar">🎰</div>
+          <div class="profile-info">
+            <h4 id="profileUsername">-</h4>
+            <p>Lv. <span id="profileLevel">1</span></p>
+            <p>XP: <span id="profileXP">0</span></p>
+          </div>
+        </div>
+        <textarea id="profileBio" placeholder="Tulis bio..." maxlength="100"></textarea>
+        <button class="btn btn-sm" id="saveBio">💾 Simpan Bio</button>
+        <h4 style="margin-top:0.8rem;">🏆 Pencapaian</h4>
+        <div class="achievements" id="achievementsList">
+          <p>Belum ada pencapaian.</p>
+        </div>
+        <h4 style="margin-top:0.8rem;">📊 Leaderboard</h4>
+        <div class="leaderboard" id="leaderboardList">
+          <p>Loading...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase SDK -->
+  <script type="module" src="js/firebase-config.js"></script>
+  <script type="module" src="js/auth.js"></script>
+  <script type="module" src="js/sound.js"></script>
+  <script type="module" src="js/game.js"></script>
+  <script type="module" src="js/bandar.js"></script>
+  <script type="module" src="js/shop.js"></script>
+  <script type="module" src="js/profile.js"></script>
+</body>
+</html>
