@@ -17,7 +17,6 @@ const showLogin = document.getElementById('showLogin');
 const authError = document.getElementById('authError');
 const logoutBtn = document.getElementById('logoutBtn');
 
-// Default user data structure
 const DEFAULT_USER_DATA = {
   username: '',
   email: '',
@@ -29,8 +28,8 @@ const DEFAULT_USER_DATA = {
   maxWinstreak: 0,
   totalWins: 0,
   totalGames: 0,
-  charms: [], // {id, name, luckBonus, equipped}
-  equippedCharms: [null, null], // max 2
+  charms: [],
+  equippedCharms: [null, null],
   achievements: [],
   loan: 0,
   loanInterest: 0,
@@ -39,117 +38,152 @@ const DEFAULT_USER_DATA = {
     casinoName: 'CasinoKu',
     unlockedModes: ['slot'],
     income: 0,
+    visitors: 50,
     rtp: 60,
   },
   lastLogin: Date.now(),
   createdAt: Date.now(),
 };
 
-// Toggle auth forms
-showRegister.addEventListener('click', () => {
-  loginForm.style.display = 'none';
-  registerForm.style.display = 'flex';
-  showRegister.style.display = 'none';
-  showLogin.style.display = 'block';
-});
+// Toggle forms
+if (showRegister) {
+  showRegister.addEventListener('click', () => {
+    loginForm.style.display = 'none';
+    registerForm.style.display = 'flex';
+    showRegister.style.display = 'none';
+    showLogin.style.display = 'block';
+  });
+}
 
-showLogin.addEventListener('click', () => {
-  registerForm.style.display = 'none';
-  loginForm.style.display = 'flex';
-  showLogin.style.display = 'none';
-  showRegister.style.display = 'block';
-});
+if (showLogin) {
+  showLogin.addEventListener('click', () => {
+    registerForm.style.display = 'none';
+    loginForm.style.display = 'flex';
+    showLogin.style.display = 'none';
+    showRegister.style.display = 'block';
+  });
+}
 
 // Register
-registerForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const username = document.getElementById('regUsername').value.trim();
-  const email = document.getElementById('regEmail').value.trim();
-  const password = document.getElementById('regPassword').value;
+if (registerForm) {
+  registerForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const username = document.getElementById('regUsername')?.value?.trim();
+    const email = document.getElementById('regEmail')?.value?.trim();
+    const password = document.getElementById('regPassword')?.value;
 
-  try {
-    // Check if username exists
-    const usernameRef = ref(db, `usernames/${username.toLowerCase()}`);
-    const usernameSnap = await get(usernameRef);
-    if (usernameSnap.exists()) {
-      authError.textContent = 'Username sudah dipakai!';
+    if (!username || !email || !password) {
+      authError.textContent = 'Semua field harus diisi!';
       return;
     }
 
-    // Create user
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-    const user = userCredential.user;
+    try {
+      const usernameRef = ref(db, `usernames/${username.toLowerCase()}`);
+      const usernameSnap = await get(usernameRef);
+      if (usernameSnap.exists()) {
+        authError.textContent = 'Username sudah dipakai!';
+        return;
+      }
 
-    // Save user data
-    const userData = {
-      ...DEFAULT_USER_DATA,
-      username: username,
-      email: email,
-      createdAt: Date.now(),
-    };
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
 
-    await set(ref(db, `users/${user.uid}`), userData);
-    await set(ref(db, `usernames/${username.toLowerCase()}`), user.uid);
+      const userData = {
+        ...DEFAULT_USER_DATA,
+        username: username,
+        email: email,
+        createdAt: Date.now(),
+      };
 
-    authError.textContent = '';
-    console.log('Register berhasil!');
-  } catch (error) {
-    authError.textContent = error.message;
-  }
-});
+      await set(ref(db, `users/${user.uid}`), userData);
+      await set(ref(db, `usernames/${username.toLowerCase()}`), user.uid);
+
+      authError.textContent = '';
+      authError.style.color = '#4CAF50';
+      authError.textContent = 'Register berhasil! Silakan login.';
+      
+      // Reset form
+      registerForm.reset();
+      // Switch to login
+      registerForm.style.display = 'none';
+      loginForm.style.display = 'flex';
+      showLogin.style.display = 'none';
+      showRegister.style.display = 'block';
+    } catch (error) {
+      authError.textContent = error.message;
+      console.error('Register error:', error);
+    }
+  });
+}
 
 // Login
-loginForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const email = document.getElementById('loginEmail').value.trim();
-  const password = document.getElementById('loginPassword').value;
+if (loginForm) {
+  loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('loginEmail')?.value?.trim();
+    const password = document.getElementById('loginPassword')?.value;
 
-  try {
-    await signInWithEmailAndPassword(auth, email, password);
-    authError.textContent = '';
-  } catch (error) {
-    authError.textContent = error.message;
-  }
-});
+    if (!email || !password) {
+      authError.textContent = 'Email dan password harus diisi!';
+      return;
+    }
+
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      authError.textContent = '';
+      loginForm.reset();
+    } catch (error) {
+      authError.textContent = error.message;
+      console.error('Login error:', error);
+    }
+  });
+}
 
 // Logout
-logoutBtn.addEventListener('click', async () => {
-  await signOut(auth);
-  window.location.reload();
-});
+if (logoutBtn) {
+  logoutBtn.addEventListener('click', async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  });
+}
 
 // Auth state listener
 onAuthStateChanged(auth, async (user) => {
   if (user) {
-    // User signed in
+    console.log('User logged in:', user.uid);
     authScreen.classList.remove('active');
     gameScreen.classList.add('active');
     
-    // Load user data
-    const userRef = ref(db, `users/${user.uid}`);
-    const snapshot = await get(userRef);
-    
-    if (!snapshot.exists()) {
-      // First time login, create default data
-      await set(userRef, {
-        ...DEFAULT_USER_DATA,
-        email: user.email,
-        createdAt: Date.now(),
-      });
+    try {
+      const userRef = ref(db, `users/${user.uid}`);
+      const snapshot = await get(userRef);
+      
+      if (!snapshot.exists()) {
+        await set(userRef, {
+          ...DEFAULT_USER_DATA,
+          username: user.email?.split('@')[0] || 'Player',
+          email: user.email,
+          createdAt: Date.now(),
+        });
+      }
+      
+      await update(userRef, { lastLogin: Date.now() });
+      
+      // Trigger event for other modules
+      window.dispatchEvent(new CustomEvent('userLoaded', { 
+        detail: { uid: user.uid, email: user.email } 
+      }));
+      
+      console.log('User data loaded successfully');
+    } catch (error) {
+      console.error('Error loading user data:', error);
     }
-    
-    // Update last login
-    await update(userRef, { lastLogin: Date.now() });
-    
-    // Dispatch event for other modules
-    window.dispatchEvent(new CustomEvent('userLoaded', { 
-      detail: { uid: user.uid, email: user.email } 
-    }));
   } else {
-    // User signed out
+    console.log('User logged out');
     authScreen.classList.add('active');
     gameScreen.classList.remove('active');
   }
 });
-
-export { DEFAULT_USER_DATA };
